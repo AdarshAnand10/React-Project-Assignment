@@ -1,0 +1,391 @@
+export interface UserData {
+  id: string;
+  name: string;
+  address: string;
+  email: string;
+  phone: string;
+  createdAt: Date;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: any;
+  loading: boolean;
+  error: string | null;
+}
+
+export interface ChartData {
+  name: string;
+  value: number;
+}
+
+// src/hooks/useLoadingState.ts
+import { useState } from 'react';
+
+export const useLoadingState = (initialState = false) => {
+  const [isLoading, setIsLoading] = useState(initialState);
+  const [error, setError] = useState<string | null>(null);
+
+  const startLoading = () => {
+    setIsLoading(true);
+    setError(null);
+  };
+
+  const stopLoading = () => {
+    setIsLoading(false);
+  };
+
+  const setLoadingError = (error: string) => {
+    setError(error);
+    setIsLoading(false);
+  };
+
+  return { isLoading, error, startLoading, stopLoading, setLoadingError };
+};
+
+// src/context/AuthContext.tsx
+import { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  GithubAuthProvider
+} from 'firebase/auth';
+import { auth } from '../firebase';
+import { useLoadingState } from '../hooks/useLoadingState';
+
+const AuthContext = createContext<any>(null);
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<any>(null);
+  const { isLoading, error, startLoading, stopLoading, setLoadingError } = useLoadingState();
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setUser(user);
+      stopLoading();
+    });
+    return unsubscribe;
+  }, []);
+
+  const signInWithGoogle = async () => {
+    startLoading();
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      setLoadingError(error.message);
+    }
+  };
+
+  const signInWithGithub = async () => {
+    startLoading();
+    try {
+      const provider = new GithubAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      setLoadingError(error.message);
+    }
+  };
+
+  const signUpWithEmail = async (email: string, password: string) => {
+    startLoading();
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      setLoadingError(error.message);
+    }
+  };
+
+  const signInWithEmail = async (email: string, password: string) => {
+    startLoading();
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      setLoadingError(error.message);
+    }
+  };
+
+  const signOutUser = async () => {
+    startLoading();
+    try {
+      await signOut(auth);
+    } catch (error: any) {
+      setLoadingError(error.message);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ 
+      user, 
+      isLoading, 
+      error, 
+      signInWithGoogle,
+      signInWithGithub,
+      signUpWithEmail,
+      signInWithEmail,
+      signOutUser 
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => useContext(AuthContext);
+
+// src/components/LoadingSpinner.tsx
+import { CircularProgress, Box } from '@mui/material';
+import { useSpring, animated } from 'react-spring';
+
+export const LoadingSpinner = () => {
+  const styles = useSpring({
+    from: { opacity: 0, transform: 'scale(0.8)' },
+    to: { opacity: 1, transform: 'scale(1)' },
+  });
+
+  return (
+    <animated.div style={styles}>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+        <CircularProgress />
+      </Box>
+    </animated.div>
+  );
+};
+
+// src/components/ErrorMessage.tsx
+import { Alert, Fade } from '@mui/material';
+
+export const ErrorMessage = ({ message }: { message: string }) => (
+  <Fade in={true}>
+    <Alert severity="error" sx={{ mb: 2 }}>
+      {message}
+    </Alert>
+  </Fade>
+);
+
+// src/components/Login.tsx
+import { useState } from 'react';
+import { Box, Button, TextField, Typography, Paper, Divider } from '@mui/material';
+import { GitHub, Google } from '@mui/icons-material';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { useSpring, animated } from 'react-spring';
+import { LoadingSpinner } from './LoadingSpinner';
+import { ErrorMessage } from './ErrorMessage';
+
+export const Login = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const { signInWithGoogle, signInWithGithub, signInWithEmail, isLoading, error } = useAuth();
+  const navigate = useNavigate();
+
+  const fadeIn = useSpring({
+    from: { opacity: 0, transform: 'translateY(20px)' },
+    to: { opacity: 1, transform: 'translateY(0)' },
+  });
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await signInWithEmail(email, password);
+    navigate('/dashboard');
+  };
+
+  if (isLoading) return <LoadingSpinner />;
+
+  return (
+    <animated.div style={fadeIn}>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+        <Paper elevation={3} sx={{ p: 4, maxWidth: 400, width: '100%' }}>
+          <Typography variant="h4" textAlign="center" mb={4}>
+            Welcome to PocketApp
+          </Typography>
+
+          {error && <ErrorMessage message={error} />}
+
+          <form onSubmit={handleEmailLogin}>
+            <TextField
+              fullWidth
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              margin="normal"
+            />
+            <TextField
+              fullWidth
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              margin="normal"
+            />
+            <Button 
+              fullWidth 
+              variant="contained" 
+              type="submit"
+              sx={{ mt: 2 }}
+            >
+              Sign in with Email
+            </Button>
+          </form>
+
+          <Divider sx={{ my: 3 }}>OR</Divider>
+
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<Google />}
+            onClick={() => signInWithGoogle().then(() => navigate('/dashboard'))}
+            sx={{ mb: 2 }}
+          >
+            Sign in with Google
+          </Button>
+
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<GitHub />}
+            onClick={() => signInWithGithub().then(() => navigate('/dashboard'))}
+          >
+            Sign in with GitHub
+          </Button>
+        </Paper>
+      </Box>
+    </animated.div>
+  );
+};
+
+// src/components/Dashboard.tsx
+import { useState, useEffect } from 'react';
+import { Box, Grid, Paper, Typography, CircularProgress } from '@mui/material';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart, Area, PieChart, Pie, Cell, BarChart, Bar 
+} from 'recharts';
+import { useSpring, animated } from 'react-spring';
+import { useAuth } from '../context/AuthContext';
+import { useLoadingState } from '../hooks/useLoadingState';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+export const Dashboard = () => {
+  const { user } = useAuth();
+  const { isLoading, error, startLoading, stopLoading, setLoadingError } = useLoadingState(true);
+  const [activityData, setActivityData] = useState<ChartData[]>([]);
+  const [categoryData, setCategoryData] = useState<ChartData[]>([]);
+  const [trendData, setTrendData] = useState<ChartData[]>([]);
+
+  const fadeIn = useSpring({
+    from: { opacity: 0 },
+    to: { opacity: 1 },
+    config: { duration: 1000 }
+  });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Simulate API calls with mock data
+        const mockActivityData = Array.from({ length: 7 }, (_, i) => ({
+          name: `Day ${i + 1}`,
+          value: Math.floor(Math.random() * 100)
+        }));
+
+        const mockCategoryData = [
+          { name: 'Food', value: 30 },
+          { name: 'Travel', value: 25 },
+          { name: 'Books', value: 20 },
+          { name: 'Entertainment', value: 25 }
+        ];
+
+        const mockTrendData = Array.from({ length: 12 }, (_, i) => ({
+          name: `Month ${i + 1}`,
+          value: Math.floor(Math.random() * 1000)
+        }));
+
+        setActivityData(mockActivityData);
+        setCategoryData(mockCategoryData);
+        setTrendData(mockTrendData);
+        stopLoading();
+      } catch (error: any) {
+        setLoadingError(error.message);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error} />;
+
+  return (
+    <animated.div style={fadeIn}>
+      <Box p={3}>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h4">
+                Welcome, {user?.displayName || 'User'}
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6">Activity Timeline</Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={activityData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="value" stroke="#8884d8" fill="#8884d8" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6">Expense Categories</Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6">Yearly Trends</Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#82ca9d" />
+                </BarChart>
+              </ResponsiveContainer>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+    </animated.div>
+  );
+};
